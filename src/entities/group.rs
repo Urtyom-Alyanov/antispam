@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "groups")]
 pub struct Model {
 	#[sea_orm(primary_key, auto_increment = false)]
-	pub id: i64, // ID группы ВК
+	pub id: u64, // ID группы ВК
 	pub token: String,              // Токен
 	pub user_token: Option<String>, // Токен пользователя
 	pub limit_count: Option<i32>,   // Лимит сообщений

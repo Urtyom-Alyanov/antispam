@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
 use crate::vk::vk_response::VkResponse;
@@ -14,14 +15,15 @@ pub struct VkLongPoolEventUpdate {
 	pub group_id: u64,
 }
 
-pub struct VkLongpoolEvent {
+#[derive(Deserialize)]
+struct VkLongpoolEvent {
 	pub ts: u32,
-	pub updates: Vec<serde_json::Value>,
+	pub updates: Vec<VkLongPoolEventUpdate>,
 	pub failed: Option<u8>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct LongPoolServerResponse {
+struct LongPoolServerResponse {
 	pub server: String,
 	pub key: String,
 	pub ts: String,
@@ -34,13 +36,15 @@ pub struct VkLongPoolState {
 	pub key: String,
 	pub last_ts: u32,
 	pub group_id: u64,
+
+	access_token: String,
 }
 
 impl VkLongPoolState {
 	pub async fn new(access_token: &str, group_id: &u64) -> Self {
 		let client = reqwest::Client::new();
 
-		let info = Self::get_new_server(client.clone(), access_token, group_id)
+		let info = Self::get_new_server(&client, access_token, group_id)
 			.await
 			.unwrap();
 
@@ -50,25 +54,27 @@ impl VkLongPoolState {
 			key: info.key,
 			server: info.server,
 			last_ts: info.ts.parse::<u32>().unwrap(),
+			access_token: access_token.to_owned(),
 		}
 	}
 
-	pub async fn get_new_server(
-		client: reqwest::Client,
+	async fn get_new_server(
+		client: &reqwest::Client,
 		access_token: &str,
 		group_id: &u64,
 	) -> Result<LongPoolServerResponse, reqwest::Error> {
 		let method = "groups.getLongPollServer";
 
-		let params = vec![
-			("access_token", access_token.to_owned()),
-			("group_id", group_id.to_string()),
-			("v", "5.199".to_owned()),
-		];
+		let mut url = Url::parse(&format!("https://api.vk.com/method/{}", method)).unwrap();
+
+		url
+			.query_pairs_mut()
+			.append_pair("access_token", access_token)
+			.append_pair("group_id", &group_id.to_string())
+			.append_pair("v", "5.199");
 
 		let client_json_response = client
-			.post(format!("https://api.vk.com/method/{}", method))
-			.json(&params)
+			.post(url)
 			.send()
 			.await?
 			.json::<VkResponse<LongPoolServerResponse>>()
@@ -77,19 +83,44 @@ impl VkLongPoolState {
 		return Ok(client_json_response.response);
 	}
 
-	async fn pooling(&self) -> Result<VkLongPoolEventUpdate, reqwest::Error> {
+	pub async fn pool(&mut self) -> Result<Vec<VkLongPoolEventUpdate>, reqwest::Error> {
 		let waiting_secs = 90;
 
-		let mut params = vec![
-			("key", self.key.to_owned()),
-			("ts", self.last_ts.to_string()),
-			("wait", waiting_secs.to_string()),
-		];
+		let mut url = Url::parse(&self.server).expect("Invalid server URL");
+		url
+			.query_pairs_mut()
+			.append_pair("key", &self.key)
+			.append_pair("ts", &self.last_ts.to_string())
+			.append_pair("wait", &waiting_secs.to_string())
+			.append_pair("act", "a_check");
 
-		self
+		let response = self
 			.client
-			.get(self.server)
-			.timeout(Duration::from_secs(waiting_secs))
-			.send();
+			.get(url)
+			.timeout(Duration::from_secs(waiting_secs + 5))
+			.send()
+			.await?
+			.json::<VkLongpoolEvent>()
+			.await?;
+
+		if let Some(failed) = response.failed {
+			match failed {
+				1 => self.last_ts = response.ts,
+				2 | 3 => {
+					let new_info =
+						Self::get_new_server(&self.client, &self.access_token, &self.group_id).await?;
+					self.key = new_info.key;
+					self.server = new_info.server;
+					if failed == 3 {
+						self.last_ts = new_info.ts.parse::<u32>().unwrap();
+					}
+				}
+				_ => {}
+			}
+		}
+
+		self.last_ts = response.ts;
+
+		Ok(response.updates)
 	}
 }
