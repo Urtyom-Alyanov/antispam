@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::extract::{Json, Path, State};
 use sea_orm::EntityTrait;
 
-use crate::{AppState, connections::event::Event, entities::connection};
+use crate::{entities::connection, eventing::reciveing::internal_network::event::Event, state::application::AppState};
 
 pub async fn listening_connections(
 	Path(id): Path<Option<i32>>,

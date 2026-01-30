@@ -1,8 +1,9 @@
-use crate::AppState;
-use crate::entities::group;
-use crate::processes::wall_post_new::process_wall_post_new;
-use crate::processes::wall_reply_new::process_wall_reply_new;
-use crate::vk::models::{VkCallback, VkWallPostNew, VkWallReplyNew};
+use crate::{
+    entities::group,
+    eventing::reciveing::vk::callback::callback_models::{VkCallback,VkWallPostNew,VkWallReplyNew,},
+    state::application::AppState,
+    processes::{wall_post_new::process_wall_post_new,wall_reply_new::process_wall_reply_new}
+};
 
 use axum::{Json, extract::State};
 use sea_orm::EntityTrait;

@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use crate::{application_state::AppError, connections::event::Event, entities::connection};
-
 use log::error;
 use sea_orm::{DatabaseConnection, EntityTrait};
+
+use crate::{entities::connection, eventing::reciveing::internal_network::event::Event, state::application::AppError};
 
 pub async fn emit_all_connections(db: &DatabaseConnection, user_id: i64) -> Result<(), AppError> {
 	let client = reqwest::Client::new();
@@ -26,7 +26,7 @@ pub async fn emit_all_connections(db: &DatabaseConnection, user_id: i64) -> Resu
 
 			async move {
 				client
-					.post(hostname + "/connection/listening/" + &event.id.to_string())
+					.post(hostname + "/internal/listen/" + &event.id.to_string())
 					.json(&event)
 					.timeout(Duration::from_secs(10))
 					.send()

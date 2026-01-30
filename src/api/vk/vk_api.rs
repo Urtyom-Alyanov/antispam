@@ -1,7 +1,6 @@
 use reqwest::{Client, Error, Url};
 use serde::{Deserialize, Serialize};
-
-use crate::api::vk::vk_api_response_wrapper::VkApiResponseWrapper;
+use serde_json::json;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct VkApiResponseWrapper<T> {
@@ -27,17 +26,23 @@ impl VkApi {
 		&self,
 		method: &str,
 		body: RequestBodyType,
-	) -> Result<ResponseType, Error> {
-		let mut url = Url::parse(&format!("https://api.vk.com/method/{}", method)).unwrap();
+	) -> Result<ResponseType, Error> where
+	    RequestBodyType: Serialize,
+		ResponseType: for<'de> Deserialize<'de>,
+	{
+		let url = Url::parse(&format!("https://api.vk.com/method/{}", method)).unwrap();
 
-		url
-			.query_pairs_mut()
-			.append_pair("access_token", &self.token)
-			.append_pair("v", &self.version);
+		let mut full_body = json!(body);
+
+		if let Some(obj) = full_body.as_object_mut() {
+            obj.insert("access_token".to_string(), json!(self.token));
+            obj.insert("v".to_string(), json!(self.version));
+        }
 
 		let response = self
 			.client
 			.post(url)
+			.json(&full_body)
 			.send()
 			.await?
 			.json::<VkApiResponseWrapper<ResponseType>>()
